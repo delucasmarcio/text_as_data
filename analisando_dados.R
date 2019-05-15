@@ -17,7 +17,7 @@ library(broom)
 library(dplyr)
 
 ## Diretório
-setwd('~/portfolio/discursos/data/')
+setwd('source')
 
 ## Dados de Discursos
 df <- fread('dados_discursos_deputados_tratados.csv',
