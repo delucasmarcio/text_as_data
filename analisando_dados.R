@@ -16,87 +16,34 @@ library(dotwhisker)
 library(broom)
 library(dplyr)
 
-# Stopwords
-sw <- read.csv('~/portfolio/discursos/stop_words.txt', 
-               sep = ';')
+## Diretório
+setwd('~/portfolio/discursos/data/')
 
 ## Dados de Discursos
-df <- fread('~/portfolio/discursos/data/dados_discursos_deputados_tratados.csv',
+df <- fread('dados_discursos_deputados_tratados.csv',
             sep = '\t',header = T, encoding = 'UTF-8')
 
 df <- as.data.frame(df)
 
 df <- df[c('id','text')]
 
-## Dados de Políticos
-cd1 = fread('~/portfolio/militaristas/data/dados_candidatos_02_18.txt', sep = ';')
-cd2 = fread('~/portfolio/militaristas/data/dados_candidatos_98.txt', sep = ';')
-
-df_cad = rbind(cd1,cd2)
-
-# Populista de Profissão
-seguranca <- c('POLICIAL MILITAR','MILITAR','MILITAR REFORMADO',
-               'POLICIAL CIVIL','MEMBRO DAS FORÇAS ARMADAS',
-               'MEMBRO DAS FORCAS ARMADAS','DELEGADO DE POLICIA')
-
-df_cad$prof_seg <- ifelse(df_cad$profissao %in% seguranca & 
-                            df_cad$resultado %in% c('ELEITO',
-                                                    'ELEITO POR MÉDIA',
-                                                    'ELEITO POR QP',
-                                                    'MÉDIA'), 1, 0)
-
-# Populista de Designação
-desig_militar <- c('SOLDADO','CABO','SARGENTO','CADETE','CAPITAO',
-                   'MAJOR','TENENTE','CORONEL','GENERAL','MARECHAL',
-                   'POLICIAL','GUARDA','MILITAR','COMANDANTE',
-                   'ALMIRANTE','SGT')
-
-Find_Security <- function(x){
-  ll <- strsplit(x,' ')
-  ll <- unlist(ll)
-  out = 0
-  if(length(x) < length(ll)){
-    for(k in ll){
-      if(k %in% desig_militar)
-        out = 1
-    }
-  }
-  return(out)
-}
-
-df_cad$nome_urna <- as.character(df_cad$nome_urna)
-df_cad$seguranca <- apply(as.matrix(df_cad$nome_urna),1, Find_Security)
-df_cad$seguranca <- ifelse(df_cad$seguranca == 1 & 
-                             df_cad$resultado %in% c('ELEITO',
-                                                     'ELEITO POR MÉDIA',
-                                                     'ELEITO POR QP',
-                                                     'MÉDIA'), 1, 0)
-
 ## Nomes dos Políticos
+# Família Bolsonaro
 bolsonaro = c('JAIR BOLSONARO','FLAVIO BOLSONARO','EDUARDO BOLSONARO')
 
-pop_prof = levels(as.factor(df_cad$nome_urna[df_cad$prof_seg == 1 &
-                                               df_cad$ano >= 2008]))
+# CFS por Profissão (Excluindo membros da família Bolsonaro)
+pop_prof = read.table('deputados_CFS_profissão_2008_2018.txt')
+pop_prof = str_trim(pop_prof$x)
 
-pol_prof = c(pop_prof, 
-             levels(as.factor(df_cad$nome[df_cad$prof_seg == 1 &
-                                            df_cad$ano >= 2008])))
+# CFS por Designação
+pop_desi = read.table('deputados_CFS_nome_urna_2008_2018.txt')
+pop_desi = str_trim(pop_desi$x)
 
-pop_prof = pop_prof[!(pop_prof %in% bolsonaro)]
-
-pop_desi = levels(as.factor(df_cad$nome_urna[df_cad$seguranca == 1 &
-                                               df_cad$ano >= 2008]))
-
-pop_desi = c(pop_desi, 
-             levels(as.factor(df_cad$nome[df_cad$seguranca == 1 &
-                                            df_cad$ano >= 2008])))
-
-pop_desi = pop_desi[!(pop_desi %in% bolsonaro)]
-
-outros = c(levels(as.factor(df_cad$nome_urna)),
-           levels(as.factor(df_cad$nome)))
-
-outros = outros[!(outros %in% c(bolsonaro,pop_prof,pop_desi))]
+# Outros Deputados (Excluindo CFS e membros da família Bolsonaro)
+# CFS por Profissão (Excluindo membros da família Bolsonaro)
+outros = read.table('~/portfolio/text_as_data/data/deputados_outros_2008_2018.txt',
+                    sep = ';')
+outros = str_trim(outros$V1)
 
 ## Definindo ID
 df$siglaPartido[df$siglaPartido == 'PP**'] <- 'PP'
@@ -106,34 +53,31 @@ df$siglaPartido[df$siglaPartido == 'AVANTE'] <- 'PTdoB'
 df$siglaPartido[df$siglaPartido == 'PATRI'] <- 'PEN'
 df$siglaPartido[df$siglaPartido == 'PODE'] <- 'PTN'
 
-df$id = ifelse(df$nome %in% c(pop_prof, pop_desi), 'CFS',
-               ifelse(df$nome %in% bolsonaro, 'Bolsonaro',
-                             df$siglaPartido))
+df$id = ifelse(grepl('BOLSONARO',df$nome) == T, 'Bolsonaro',
+               ifelse(df$nome %in% c(pop_prof, pop_desi), 'CFS',
+                      df$siglaPartido))
 
 df$legis = ifelse(df$ano < 2012, '53',
                   ifelse(df$ano < 2014, '54', '55'))
-
-xx = table(grepl('CRÍTICA',df$keywords),df$id)
-xx = rbind(xx, xx[1,] + xx[2,])
-xx[3,] = xx[2,] * 100 / xx[3,]
-round(xx,2)
 
 dt = df[nchar(df$transcricao) > 0,]
 
 dt$text = dt$transcricao
 dt$docid = paste(dt$id, dt$legis, sep = ' ')
-dt$docid = dt$id
 
 dt = dt[c('docid','text')]
 
 ## Word Fish
+# Corupus e Matrix de Texto
 dfC <- corpus(dt)
 
 dfM <- dfm(dfC,groups = 'docid')
 
+# Processando Algoritmo
 wfish = textmodel_wordfish(dfM)
 
-wf = textplot_scale1d(wfish, highlighted = c('CFS', 'Bolsonaro'))
+# Coletando Dados
+wf = textplot_scale1d(wfish)
 
 wfd = wf$data
 wfd$std.error = (wfd$upper - wfd$theta) / 1.96
@@ -146,14 +90,33 @@ colnames(wfd)[1:2] = c('term','estimate')
 
 wfd = wfd[order(wfd$estimate,decreasing = T),]
 
-dwplot(wfd, 
-       dot_args = list(size = 3, pch = 19, 
-                       colour = c(rep('black',20),
-                                  'red',rep('black',2),
-                                  'red',rep('black',4)))) + 
-  theme_classic(base_size = 18,
-                base_family = 'serif') +
-  theme(legend.position="none")
+# Inserindo Labels
+wfd$model = rep('Outros', nrow(wfd))
+wfd$model[grepl('Bolsonaro',wfd$term) == T] <- 'Bolsonaro'
+wfd$model[grepl('CFS',wfd$term) == T] <- 'CFS'
+
+# Definindo Cores
+color = rep('black', nrow(wfd))
+color[grepl('Bolsonaro',wfd$term) == T] <- 'blue'
+color[grepl('CFS',wfd$term) == T] <- 'green'
+
+# Agregando por Legislatura
+ordem = as.character(wfd$term)
+ordem = substr(ordem, nchar(ordem) - 1, nchar(ordem))
+ordem = as.character(wfd$term)[order(ordem)]
+
+brackets = list(c("53º Legislatura", "PV 53", "PSOL 53"),
+                c("54º Legislatura", "PV 54", "PSOL 54"),
+                c("55º Legislatura", "PV 55", "PSOL 55"))
+
+# Plot
+{dwplot(wfd, 
+        order_vars = ordem,
+        dot_args = list(size = 3, pch = 19)) + 
+    labs(x = 'theta estimado', y = '', color = 'Grupo') +
+    theme_classic(base_size = 18,
+                  base_family = 'serif')} %>%
+  add_brackets(brackets)
 
 ## Análise Fatorial de Correspondência
 wca = textmodel_ca(dfM)
@@ -169,13 +132,17 @@ plot(x = df_ca$dim1,
      xlab = 'Dimensão 1', 
      ylab = 'Dimensão 2',
      cex = 1.4,
-     cex.lab = 1.6)
+     cex.lab = 1.6,
+     family = 'serif')
 
 grid()
+
+colour = rep('black',nrow(wfd))
+colour[grepl('Bolsonaro',rownames(df_ca)) == T] <- 'blue'
+colour[grepl('CFS',rownames(df_ca)) == T] <- 'green'
 
 text(df_ca$dim1, 
      df_ca$dim2, 
      labels = rownames(df_ca), 
      cex = 1.2, 
-     col = c(rep('red',2),rep('black',26)))
-
+     col = colour)
